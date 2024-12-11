@@ -1,58 +1,56 @@
-from flask import Flask, jsonify, request 
+from flask import Flask, jsonify, request
 import requests
-from flask_cors import CORS
+import logging
 
 app = Flask(__name__)
-CORS(app)
 
-
-#TARGET URL FOR THE ESP32 SERVER
-ESP32_URL = "http://192.168.4.1"
-
-
-@app.route('/', methods=['GET'])
-def handle_root():
-
-    return "Mock: Root Response", 200
-    """
-    Proxy the root GET request to the ESP32 server.
-    """
-    try:
-        response = requests.get(f"{ESP32_URL}/")
-        return response.content, response.status_code, response.headers.items()
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": str(e)}), 500
-
+# Mapping of device IDs to their respective ESP32 URLs
+DEVICE_URLS = {
+    "1": "http://192.168.4.12",  # ESP32 URL for the first device
+    "2": "http://192.168.4.10",  # ESP32 URL for the second device
+    # Add more devices as needed
+}
 
 @app.route('/control-method', methods=['POST'])
 def handle_control_method():
-
-    # Mock response for control-method POST
-    action = request.form.get('action', 'none')
-    return f"Mock: Received action = {action}", 200
-    """
-    Proxy the POST request to the ESP32 server's /control-method endpoint.
-    """
     try:
-        # Extract POST data from the client
+        # Log incoming request data for debugging
+        logging.info(f"Received request: {request.form}")
+
+        # Extract action and device_id parameters from the client request
         action = request.form.get('action')
+        device_id = request.form.get('device_id')
+
         if not action:
             return jsonify({"error": "Missing 'action' parameter"}), 400
+        if not device_id:
+            return jsonify({"error": "Missing 'device_id' parameter"}), 400
+
+        # Get the ESP32 URL for the given device_id
+        esp_url = DEVICE_URLS.get(device_id)
+        if not esp_url:
+            return jsonify({"error": f"No ESP32 URL found for device_id '{device_id}'"}), 404
 
         # Forward the request to the ESP32 server
-        response = requests.post(f"{ESP32_URL}/control-method", data={"action": action})
+        response = requests.post(
+            f"{esp_url}/control-method",
+            data={"action": action},
+            timeout=5  # Optional: set a timeout for the request
+        )
+
+        # Return the response from the ESP32 server
         return response.content, response.status_code, response.headers.items()
-        
     except requests.exceptions.RequestException as e:
-        return jsonify({"error": str(e)}), 500
+        logging.error(f"Error communicating with ESP32 device: {e}")
+        return jsonify({"error": "Failed to communicate with ESP32 device"}), 502
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
-@app.route('/check-wifi', methods=['GET'])
-def check_wifi():
-    # Mock response for check-wifi GET
-    return "Mock: Wi-Fi Status = Connected", 200
+if __name__ == "__main__":
+    # Configure logging
+    logging.basicConfig(level=logging.INFO)
 
-
-if __name__ == '__main__':
-    app.run(host='10.255.134.1', port=5001)
-
+    # Run the Flask app with SSL context
+    app.run(host="198.82.190.97", port=5000, ssl_context=('cert.pem', 'key.pem'))
